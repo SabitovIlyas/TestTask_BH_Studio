@@ -8,7 +8,9 @@ public class RelativeMovement : NetworkBehaviour
     public Transform Target { set => target = value; }
     public bool Jerked => jerked;
 
-    [SerializeField] private float jerkDistance = 60.0f;
+    private float prevJerkDistance = 600.0f;
+    [SerializeField] private float jerkDistance = 600.0f;
+    [SyncVar] private float newJerkDistance = 600.0f;
     private float rotationSpeed = 15.0f;
     private float moveSpeed = 6.0f;
     private float gravity = -9.8f;
@@ -20,7 +22,7 @@ public class RelativeMovement : NetworkBehaviour
     private CharacterController characterController;
     private Animator animator;
     private Transform previousTransform;
-    private bool jerked;
+    [SyncVar] private bool jerked;
 
     void Start()
     {
@@ -31,20 +33,28 @@ public class RelativeMovement : NetworkBehaviour
 
     void Update()
     {
+        if (isServer)
+        {
+            if (prevJerkDistance != jerkDistance)
+            {
+                prevJerkDistance = jerkDistance;
+                newJerkDistance = jerkDistance;
+            }
+        }
+        
         if (!isLocalPlayer)
             return;
+        jerkDistance = newJerkDistance;
+        
+        if (NetworkClient.ready)
+            CmdResetJerked();
 
-        jerked = false;
         Vector3 movement = Vector3.zero;
 
         if (Input.GetMouseButtonDown(0))
-        {
             movement = Jerk();
-        }
         else
-        {
             movement = Movement();
-        }
 
         if (characterController.isGrounded)
         {
@@ -91,12 +101,13 @@ public class RelativeMovement : NetworkBehaviour
 
     private Vector3 Jerk()
     {
-        jerked = true;
+        CmdSetJerked();
+        
         Vector3 movement = Vector3.zero;
         
         var cameraTransform = target.transform;
-        var cameraForward = cameraTransform.forward;
-        var playerForward = transform.forward;
+        var cameraForward = cameraTransform.forward;//
+        var playerForward = transform.forward;//
         var codirection = playerForward.z / cameraForward.z;
         
         if (codirection >= 0)
@@ -119,5 +130,17 @@ public class RelativeMovement : NetworkBehaviour
         transform.rotation = Quaternion.Lerp(transform.rotation, direction, rotationSpeed * Time.deltaTime);
 
         return movement;
+    }
+
+    [Command]
+    private void CmdSetJerked()
+    {
+        jerked = true;
+    }
+    
+    [Command]
+    private void CmdResetJerked()
+    {
+        jerked = false;
     }
 }

@@ -1,16 +1,11 @@
-using System;
-using System.Collections;
 using System.Collections.Generic;
-using System.Linq;
 using Mirror;
 using UnityEngine;
 
 public class CustomNetworkRoomManager : NetworkRoomManager
 {
-    private List<Observer> observers = new List<Observer>();
-    private List<int> usedStartPositions = new List<int>();
-    public CustomPlayer player;
-    
+    private List<int> usedStartPositions = new();
+
     public override Transform GetStartPosition()
     {
         startPositions.RemoveAll(t => t == null);

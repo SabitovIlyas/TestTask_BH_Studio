@@ -2,8 +2,12 @@
 {
     PlayerWasCreated,
     CameraWasCreated,
-    ScoreUpdated,
-    UIControllerCreated,
-    GameManagerCreated,
-    EndGame
+    ScoreWasUpdated,
+    UIControllerWasCreated,
+    GameManagerWasCreated,
+    EndGame,
+    KeyPressedF1,
+    KeyPressedF2,
+    NetworkManagerWasCreated,
+    InputManagerWasCreated,
 }

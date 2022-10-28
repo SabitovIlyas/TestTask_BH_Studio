@@ -6,17 +6,28 @@ using UnityEngine.SceneManagement;
 
 public class GameManager : NetworkBehaviour, Observer, Subject
 {
+    public Logger Logger { set => logger = value; }
+    public string WinnerName => winnerName;
+
+    private Logger logger = NullLogger.Create();
     private CustomPlayer player;
     private int score;
     private int scoreForVictory = 3;
     private NetworkManager networkManager;
-    private bool isEndGame = false;
+    [SyncVar] [SerializeField] private bool isEndGame;
     private DateTime startLoadNewGameDateTime;
     private int waitingForSecondsForLoadNewGame = 5;
     private List<Observer> observers = new();
-    public string Winner => winner;
-    private string winner = string.Empty;
-    
+    [SyncVar] [SerializeField] private string winnerName = string.Empty;
+    private bool wasObserversNotifiedAboutEndGame;
+    [SyncVar] private bool isTimeForLoadNewGameHasCome;
+
+
+    private void Awake()
+    {
+        ResetSettings();
+    }
+
     public void InitializePlayer(GameObject playerGameObject)
     {
         player = playerGameObject.GetComponent<CustomPlayer>();
@@ -31,19 +42,40 @@ public class GameManager : NetworkBehaviour, Observer, Subject
     private void Update()
     {
         if (isEndGame)
-            if (IsTimeForLoadNewGameHasCome())
+        {
+            if (hasAuthority) CmdIsTimeForLoadNewGameHasCome();
+
+            if (isTimeForLoadNewGameHasCome && hasAuthority)
                 CmdLoadNewGame();
+            else if (isClient && !wasObserversNotifiedAboutEndGame)
+            {
+                NotifyObservers(Event.EndGame);
+                wasObserversNotifiedAboutEndGame = true;
+            }
+        }
+
+        else if (WasPlayerWin() && hasAuthority)
+            CmdEndGame(player.gameObject);
+        
     }
 
     public void UpdateState(object customObject, Event customEvent)
     {
         if (customObject.GetType() == typeof(CustomPlayer))
-            if (customEvent == Event.ScoreUpdated)
+            if (customEvent == Event.ScoreWasUpdated)
             {
-                score = player.Score;
-                if (WasPlayerWin())
-                    EndGame();
-            }    
+                var customPlayer = (CustomPlayer)customObject;
+                score = customPlayer.Score;
+                if (WasPlayerWin())                
+                    customPlayer.GetAuthorityToGameManager(gameObject);              
+            }
+        
+        if (customObject.GetType() == typeof(InputManager))
+            if (customEvent == Event.KeyPressedF1)
+            {
+                var message = String.Format("=== {0} {1} ===\r\n=== ///////////// ===\r\n", gameObject, this);
+                logger.LogWithData(message, this);
+            }
     }
     
     private bool WasPlayerWin()
@@ -51,34 +83,42 @@ public class GameManager : NetworkBehaviour, Observer, Subject
         return score >= scoreForVictory;
     }
 
-    private void EndGame()
+    [Command]
+    private void CmdEndGame(GameObject playerGameObject)
     {
-        winner = player.Name;
+        var winner = playerGameObject.GetComponent<CustomPlayer>();
+        winnerName = winner.name;
         isEndGame = true;
         startLoadNewGameDateTime = DateTime.Now;
-        NotifyObservers(Event.EndGame);
     }
     
-    private bool IsTimeForLoadNewGameHasCome()
+    [Command]
+    private void CmdIsTimeForLoadNewGameHasCome()
     {
         var timePassed = DateTime.Now - startLoadNewGameDateTime;
-        return timePassed.TotalSeconds >= waitingForSecondsForLoadNewGame;
+        isTimeForLoadNewGameHasCome = timePassed.TotalSeconds >= waitingForSecondsForLoadNewGame;
     }
 
-    //Надо сделать, чтобы команда запускалась на сервере. И не только эта команда класса GameManager.
-    //К сожалению, не успел полностью разобраться в этом вопросе и отладить программу.
-    //Если дедлайн можно отложить на пару дней, то я доделаю тестовое задание.
-    //[Command]
-    private void CmdLoadNewGame()
+    [Command]
+    public void CmdLoadNewGame()
     {
+        logger.Log("CmdLoadNewGame()");
         var scene = SceneManager.GetActiveScene();
+        Debug.Log("scene " + scene);
+        Debug.Log("networkManager " + networkManager);
+        if (networkManager == null)
+        {
+            var networkManagerGameObject = GameObject.FindWithTag("NetworkManager");
+            networkManager = networkManagerGameObject.GetComponent<CustomNetworkRoomManager>();
+        }
         networkManager.ServerChangeScene(scene.name);
-        ResetIsEndGame();
     }
 
-    private void ResetIsEndGame()
+    private void ResetSettings()
     {
         isEndGame = false;
+        score = 0;
+        isTimeForLoadNewGameHasCome = false;
     }
 
     private void OnDestroy()
@@ -93,7 +133,8 @@ public class GameManager : NetworkBehaviour, Observer, Subject
 
     public void RemoveObserver(Observer observer)
     {
-        observers.Remove(observer);
+        if (observers != null && observers.Count > 0 && observer != null)
+            observers.Remove(observer);
     }
 
     public void NotifyObservers(Event customEvent)
